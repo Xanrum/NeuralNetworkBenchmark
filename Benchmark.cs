@@ -1,5 +1,6 @@
 using Refit;
 using System.Diagnostics;
+using System.Text.Json;
 
 
 public static class Benchmark
@@ -50,22 +51,23 @@ public static class Benchmark
         {
             Data = inputs.Select((p, i) => new LoadInputsRequestItem()
             {
-                Key = "bench" + i,
+                Key = i,
                 Inputs = p
             }).ToList()
         });
 
-        var inputNames = Enumerable.Range(0, inputsCount).Select(p => "bench" + p).ToArray();
+        var inputNames = Enumerable.Range(0, inputsCount).Select(p => (long)p).ToArray();
 
 
         Console.WriteLine("start");
         var sw = Stopwatch.StartNew();
-        var tasks = synapses.Select(p => Task.Run(async () => await api.CalcNoResponse(new()
-        {
-            Model = model,
-            Input = inputNames,
-            Synapses = p
-        }))).ToList();
+        var tasks = synapses.Select(p => Task.Run(async () => {
+            var ms = new MemoryStream();
+            PayloadFormatter.Format(ms, inputNames, p, model);
+            ms.Position = 0;
+            var res = await httpClient.PostAsync("/neural/calc", new StreamContent(ms));
+            return await JsonSerializer.DeserializeAsync<CalcResponse>(await res.Content.ReadAsStreamAsync());
+        })).ToList();
         await Task.WhenAll(tasks);
         sw.Stop();
         Console.WriteLine(sw.Elapsed);

@@ -1,4 +1,5 @@
 using Refit;
+using System.Text.Json;
 
 
 public static class Tester
@@ -44,12 +45,12 @@ public static class Tester
         {
             Data = inputs.Select((p, i) => new LoadInputsRequestItem()
             {
-                Key = "sample" + i,
+                Key = i,
                 Inputs = p
             }).ToList()
         });
 
-        var inputNames = Enumerable.Range(0, inputsCount).Select(p => "sample" + p).ToArray();
+        var inputNames = Enumerable.Range(0, inputsCount).Select(p => (long)p).ToArray();
 
 
         double[] Calc(double[] input, double[] synapse)
@@ -73,22 +74,29 @@ public static class Tester
             }
             return prev;
         }
+        
+        var httpClient = new HttpClient(new HttpClientHandler()
+        {
+            MaxConnectionsPerServer = 32
+        })
+        {
+            BaseAddress = new ("http://192.168.1.10:5018")
+        };
 
         foreach (var synapse in synapses)
         {
-            var result = await api.Calc(new()
-            {
-                Model = model,
-                Input = inputNames,
-                Synapses = synapse
-            });
+            var ms = new MemoryStream();
+            PayloadFormatter.Format(ms, inputNames, synapse, model);
+            ms.Position = 0;
+            var res = await httpClient.PostAsync("/neural/calc", new StreamContent(ms));
+            var result = await JsonSerializer.DeserializeAsync<CalcResponse>(await res.Content.ReadAsStreamAsync());
 
             for (var i = 0; i < inputs.Length; i++)
             {
                 var input = inputs[i];
                 var apiCalc = result.Outputs[i];
                 var calcResult = Calc(input, synapse);
-                if (apiCalc.Zip(calcResult).Any(p => Math.Abs(p.First - p.Second) > 0.00001))
+                if (apiCalc.Zip(calcResult).Any(p => Math.Abs(p.First - p.Second) > 0.0001))
                     throw new("wrong");
             }
         }
