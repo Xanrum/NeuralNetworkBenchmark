@@ -11,13 +11,12 @@ public static class Tester
         Random rand = new Random(0);
         var inputsCount = 10;
         var inputCount = 3;
-        double[][] inputs = new double[inputsCount][];
+        double[] inputs = new double[inputsCount*inputCount];
         for (var i = 0; i < inputsCount; i++)
         {
-            inputs[i] = new double[inputCount];
             for (var j = 0; j < inputCount; j++)
             {
-                inputs[i][j] = rand.NextDouble() * 2 - 1;
+                inputs[i*inputCount + j] = rand.NextDouble() * 2 - 1;
             }
         }
 
@@ -43,14 +42,10 @@ public static class Tester
         var api = RestService.For<IServer>("http://192.168.1.10:5018");
         await api.Load(new()
         {
-            Data = inputs.Select((p, i) => new LoadInputsRequestItem()
-            {
-                Key = i,
-                Inputs = p
-            }).ToList()
+            Key = 0,
+            Data = inputs,
+            Indexes = Enumerable.Range(0, inputsCount).Select(p => p * inputCount).ToArray()
         });
-
-        var inputNames = Enumerable.Range(0, inputsCount).Select(p => (long)p).ToArray();
 
 
         double[] Calc(double[] input, double[] synapse)
@@ -86,14 +81,14 @@ public static class Tester
         foreach (var synapse in synapses)
         {
             var ms = new MemoryStream();
-            PayloadFormatter.Format(ms, inputNames, synapse, model);
+            PayloadFormatter.Format(ms, 0, synapse, model);
             ms.Position = 0;
             var res = await httpClient.PostAsync("/neural/calc", new StreamContent(ms));
             var result = await JsonSerializer.DeserializeAsync<CalcResponse>(await res.Content.ReadAsStreamAsync());
 
-            for (var i = 0; i < inputs.Length; i++)
+            for (var i = 0; i < inputsCount; i++)
             {
-                var input = inputs[i];
+                var input = new Span<double>(inputs, i*inputCount, inputCount).ToArray();
                 var apiCalc = result.Outputs[i];
                 var calcResult = Calc(input, synapse);
                 if (apiCalc.Zip(calcResult).Any(p => Math.Abs(p.First - p.Second) > 0.0001))

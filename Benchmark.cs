@@ -8,15 +8,14 @@ public static class Benchmark
     public static async Task Bench()
     {
         Random rand = new Random(0);
-        var inputsCount = 100;
-        var inputCount = 100;
-        double[][] inputs = new double[inputsCount][];
+        var inputsCount = 1000;
+        var inputCount = 60;
+        double[] inputs = new double[inputsCount*inputCount];
         for (var i = 0; i < inputsCount; i++)
         {
-            inputs[i] = new double[inputCount];
             for (var j = 0; j < inputCount; j++)
             {
-                inputs[i][j] = rand.NextDouble() * 2 - 1;
+                inputs[i*inputCount+j] = rand.NextDouble() * 2 - 1;
             }
         }
 
@@ -49,11 +48,9 @@ public static class Benchmark
         var api = RestService.For<IServer>(httpClient);
         await api.Load(new()
         {
-            Data = inputs.Select((p, i) => new LoadInputsRequestItem()
-            {
-                Key = i,
-                Inputs = p
-            }).ToList()
+            Key = 1,
+            Data = inputs,
+            Indexes = Enumerable.Range(0, inputsCount).Select(p => p * inputCount).ToArray()
         });
 
         var inputNames = Enumerable.Range(0, inputsCount).Select(p => (long)p).ToArray();
@@ -63,7 +60,7 @@ public static class Benchmark
         var sw = Stopwatch.StartNew();
         var tasks = synapses.Select(p => Task.Run(async () => {
             var ms = new MemoryStream();
-            PayloadFormatter.Format(ms, inputNames, p, model);
+            PayloadFormatter.Format(ms, 1, p, model);
             ms.Position = 0;
             var res = await httpClient.PostAsync("/neural/calc", new StreamContent(ms));
             return await JsonSerializer.DeserializeAsync<CalcResponse>(await res.Content.ReadAsStreamAsync());
